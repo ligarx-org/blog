@@ -1,0 +1,3 @@
+# Blog System Error Log
+# This file will contain all system errors and debug information
+# Format: [TIMESTAMP] LEVEL: MESSAGE | Context: {...} | IP: xxx.xxx.xxx.xxx | User Agent: ...
