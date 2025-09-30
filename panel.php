@@ -1,632 +1,842 @@
 <?php
+session_start();
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
 ini_set('log_errors', 1);
-ini_set('error_log', __DIR__ . '/../xato.log');
+ini_set('error_log', __DIR__ . '/xato.log');
 
-header('Content-Type: application/json; charset=utf-8');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization');
-
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    error_log("CORS preflight request handled");
-    exit(0);
-}
+require_once 'api/config.php';
 
 try {
-    error_log("API request started: " . json_encode([
-        'method' => $_SERVER['REQUEST_METHOD'],
-        'action' => $_GET['action'] ?? 'none',
-        'uri' => $_SERVER['REQUEST_URI'] ?? '',
-        'timestamp' => date('Y-m-d H:i:s')
-    ]));
-    
-    session_start();
-    require_once 'config.php';
-    require_once 'email-verification.php';
-
     $db = new Database();
     $pdo = $db->getConnection();
-    $emailVerification = new EmailVerification($pdo);
+    logInfo("Database connection successful", ['timestamp' => date('Y-m-d H:i:s')]);
+} catch (Exception $e) {
+    logError("Database connection failed", ['error' => $e->getMessage()]);
+    die("Database connection failed: " . $e->getMessage());
+}
 
-    $method = $_SERVER['REQUEST_METHOD'];
-    $request = $_GET['action'] ?? '';
+// Handle AJAX requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
     
-    error_log("Processing request: " . json_encode(['action' => $request, 'method' => $method]));
-
-    switch ($request) {
-        case 'register':
-            if ($method === 'POST') {
-                error_log("Register request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data received for registration");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $username = sanitizeInput($data['username']);
-                $email = sanitizeInput($data['email']);
-                $password = $data['password'];
-                $captcha = $data['captcha'];
-                
-                error_log("Registration data processed: " . json_encode(['username' => $username, 'email' => $email]));
+    try {
+        switch ($_POST['action']) {
+            case 'login':
+                logSuccess("Admin login attempt");
+                $email = sanitizeInput($_POST['email'] ?? '');
+                $password = $_POST['password'] ?? '';
+                $captcha = $_POST['captcha'] ?? '';
                 
                 // Validate captcha
                 if (!validateCaptcha($captcha, $_SESSION['captcha'] ?? '')) {
-                    error_log("Captcha validation failed: " . json_encode(['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']));
-                    jsonResponse(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
+                    logError("Admin login captcha failed", ['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']);
+                    echo json_encode(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
+                    exit;
                 }
                 
-                // Validate email
-                if (!validateEmail($email)) {
-                    error_log("Email validation failed: " . $email);
-                    jsonResponse(['success' => false, 'message' => 'Faqat @gmail.com manzillari qabul qilinadi']);
-                }
-                
-                // Check if user exists
-                $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
-                $stmt->execute([$username, $email]);
-                if ($stmt->fetch()) {
-                    error_log("User already exists: " . json_encode(['username' => $username, 'email' => $email]));
-                    jsonResponse(['success' => false, 'message' => 'Foydalanuvchi yoki email allaqachon mavjud']);
-                }
-                
-                // Send verification email
-                $result = $emailVerification->sendVerificationEmail($email, 'registration');
-                if ($result['success']) {
-                    // Store user data temporarily
-                    $_SESSION['temp_user'] = [
-                        'username' => $username,
-                        'email' => $email,
-                        'password' => password_hash($password, PASSWORD_DEFAULT)
-                    ];
-                    error_log("Registration email sent: " . $email);
-                    jsonResponse(['success' => true, 'message' => 'Tasdiqlash kodi emailingizga yuborildi']);
-                } else {
-                    error_log("Email sending failed: " . json_encode($result));
-                    jsonResponse(['success' => false, 'message' => $result['message']]);
-                }
-            }
-            break;
-            
-        case 'verify-email':
-            if ($method === 'POST') {
-                error_log("Email verification request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data for email verification");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $code = $data['code'];
-                $email = $_SESSION['temp_user']['email'] ?? '';
-                
-                if (!$email) {
-                    error_log("No temp user email found in session");
-                    jsonResponse(['success' => false, 'message' => 'Sessiya muddati tugagan']);
-                }
-                
-                $result = $emailVerification->verifyCode($email, $code, 'registration');
-                if ($result['success']) {
-                    // Create user account
-                    $tempUser = $_SESSION['temp_user'];
-                    $stmt = $pdo->prepare("INSERT INTO users (username, email, password, is_verified) VALUES (?, ?, ?, 1)");
-                    $stmt->execute([$tempUser['username'], $tempUser['email'], $tempUser['password']]);
-                    
-                    unset($_SESSION['temp_user']);
-                    error_log("User registration completed: " . $email);
-                    jsonResponse(['success' => true, 'message' => 'Ro\'yxatdan o\'tish muvaffaqiyatli yakunlandi!']);
-                } else {
-                    error_log("Email verification failed: " . json_encode($result));
-                    jsonResponse(['success' => false, 'message' => $result['message']]);
-                }
-            }
-            break;
-            
-        case 'login':
-            if ($method === 'POST') {
-                error_log("Login request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data for login");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $email = sanitizeInput($data['email']);
-                $password = $data['password'];
-                $captcha = $data['captcha'];
-                
-                error_log("Login attempt: " . $email);
-                
-                // Validate captcha
-                if (!validateCaptcha($captcha, $_SESSION['captcha'] ?? '')) {
-                    error_log("Login captcha validation failed: " . json_encode(['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']));
-                    jsonResponse(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
-                }
-                
-                $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_verified = 1");
+                $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ? AND is_admin = 1");
                 $stmt->execute([$email]);
-                $user = $stmt->fetch();
-                
-                if ($user && password_verify($password, $user['password'])) {
-                    // Create session
-                    $sessionToken = generateSecureToken();
-                    $expiresAt = date('Y-m-d H:i:s', time() + 86400); // 24 hours
-                    
-                    $stmt = $pdo->prepare("INSERT INTO user_sessions (user_id, session_token, expires_at) VALUES (?, ?, ?)");
-                    $stmt->execute([$user['id'], $sessionToken, $expiresAt]);
-                    
-                    unset($user['password']);
-                    error_log("User logged in successfully: " . json_encode(['user_id' => $user['id'], 'email' => $email]));
-                    jsonResponse([
-                        'success' => true,
-                        'message' => 'Muvaffaqiyatli tizimga kirdingiz!',
-                        'user' => $user,
-                        'token' => $sessionToken
-                    ]);
-                } else {
-                    error_log("Login failed - invalid credentials: " . $email);
-                    jsonResponse(['success' => false, 'message' => 'Email yoki parol noto\'g\'ri']);
-                }
-            }
-            break;
-            
-        case 'posts':
-            if ($method === 'GET') {
-                error_log("Posts request received");
-                $page = (int)($_GET['page'] ?? 1);
-                $limit = (int)($_GET['limit'] ?? 10);
-                $search = $_GET['search'] ?? '';
-                $category = $_GET['category'] ?? '';
-                $offset = ($page - 1) * $limit;
-                
-                error_log("Posts query parameters: " . json_encode(['page' => $page, 'limit' => $limit, 'search' => $search, 'category' => $category]));
-                
-                $whereClause = "WHERE 1=1";
-                $params = [];
-                
-                if ($search) {
-                    $whereClause .= " AND (p.title LIKE ? OR p.content LIKE ? OR p.hashtags LIKE ?)";
-                    $searchTerm = "%$search%";
-                    $params[] = $searchTerm;
-                    $params[] = $searchTerm;
-                    $params[] = $searchTerm;
-                }
-                
-                if ($category) {
-                    $whereClause .= " AND p.hashtags LIKE ?";
-                    $params[] = "%$category%";
-                }
-                
-                $sql = "SELECT p.*, u.username, u.avatar,
-                               COALESCE((SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id), 0) as like_count,
-                               COALESCE((SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id), 0) as comment_count
-                        FROM posts p 
-                        JOIN users u ON p.author_id = u.id 
-                        $whereClause
-                        ORDER BY p.created_at DESC 
-                        LIMIT $limit OFFSET $offset";
-                
-                error_log("Executing posts query: " . json_encode(['sql' => $sql, 'params' => $params]));
-                
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
-                $posts = $stmt->fetchAll();
-                
-                error_log("Posts retrieved successfully: " . count($posts));
-                jsonResponse(['success' => true, 'posts' => $posts]);
-            }
-            break;
-            
-        case 'post':
-            if ($method === 'GET') {
-                $id = $_GET['id'] ?? 0;
-                error_log("Single post request: " . $id);
-                
-                $stmt = $pdo->prepare("SELECT p.*, u.username, u.avatar,
-                                             COALESCE((SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id), 0) as like_count,
-                                             COALESCE((SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id), 0) as comment_count
-                                      FROM posts p 
-                                      JOIN users u ON p.author_id = u.id 
-                                      WHERE p.id = ?");
-                $stmt->execute([$id]);
-                $post = $stmt->fetch();
-                
-                if ($post) {
-                    // Increment views
-                    $stmt = $pdo->prepare("UPDATE posts SET views = COALESCE(views, 0) + 1 WHERE id = ?");
-                    $stmt->execute([$id]);
-                    
-                    error_log("Post retrieved and view incremented: " . json_encode(['post_id' => $id, 'title' => $post['title']]));
-                    jsonResponse(['success' => true, 'post' => $post]);
-                } else {
-                    error_log("Post not found: " . $id);
-                    jsonResponse(['success' => false, 'message' => 'Post topilmadi'], 404);
-                }
-            }
-            break;
-            
-        case 'like':
-            if ($method === 'POST') {
-                error_log("Like request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data for like");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $token = $data['token'];
-                $postId = $data['post_id'];
-                
-                error_log("Like request data: " . json_encode(['post_id' => $postId]));
-                
-                // Verify user session
-                $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
-                $stmt->execute([$token]);
-                $session = $stmt->fetch();
-                
-                if (!$session) {
-                    error_log("Invalid session for like: " . substr($token, 0, 10) . '...');
-                    jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
-                }
-                
-                $userId = $session['user_id'];
-                
-                // Check if already liked
-                $stmt = $pdo->prepare("SELECT id FROM likes WHERE user_id = ? AND post_id = ?");
-                $stmt->execute([$userId, $postId]);
-                $existingLike = $stmt->fetch();
-                
-                if ($existingLike) {
-                    // Unlike
-                    $stmt = $pdo->prepare("DELETE FROM likes WHERE user_id = ? AND post_id = ?");
-                    $stmt->execute([$userId, $postId]);
-                    $action = 'unliked';
-                } else {
-                    // Like
-                    $stmt = $pdo->prepare("INSERT INTO likes (user_id, post_id) VALUES (?, ?)");
-                    $stmt->execute([$userId, $postId]);
-                    $action = 'liked';
-                }
-                
-                // Get updated like count
-                $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM likes WHERE post_id = ?");
-                $stmt->execute([$postId]);
-                $likeCount = $stmt->fetch()['count'];
-                
-                error_log("Like action completed: " . json_encode(['action' => $action, 'post_id' => $postId, 'user_id' => $userId, 'like_count' => $likeCount]));
-                jsonResponse(['success' => true, 'action' => $action, 'like_count' => $likeCount]);
-            }
-            break;
-            
-        case 'comments':
-            if ($method === 'GET') {
-                $postId = $_GET['post_id'] ?? 0;
-                error_log("Comments request: " . $postId);
-                
-                $stmt = $pdo->prepare("SELECT c.*, u.username, u.avatar 
-                                      FROM comments c 
-                                      JOIN users u ON c.user_id = u.id 
-                                      WHERE c.post_id = ? 
-                                      ORDER BY c.created_at DESC");
-                $stmt->execute([$postId]);
-                $comments = $stmt->fetchAll();
-                
-                error_log("Comments retrieved: " . json_encode(['post_id' => $postId, 'count' => count($comments)]));
-                jsonResponse(['success' => true, 'comments' => $comments]);
-            } elseif ($method === 'POST') {
-                error_log("Add comment request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data for comment");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $token = $data['token'];
-                $postId = $data['post_id'];
-                $content = sanitizeInput($data['content']);
-                
-                error_log("Comment data: " . json_encode(['post_id' => $postId, 'content_length' => strlen($content)]));
-                
-                // Verify user session
-                $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
-                $stmt->execute([$token]);
-                $session = $stmt->fetch();
-                
-                if (!$session) {
-                    error_log("Invalid session for comment: " . substr($token, 0, 10) . '...');
-                    jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
-                }
-                
-                $stmt = $pdo->prepare("INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)");
-                $stmt->execute([$postId, $session['user_id'], $content]);
-                
-                error_log("Comment added: " . json_encode(['post_id' => $postId, 'user_id' => $session['user_id']]));
-                jsonResponse(['success' => true, 'message' => 'Izoh qo\'shildi']);
-            }
-            break;
-            
-        case 'contact':
-            if ($method === 'POST') {
-                error_log("Contact request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data for contact");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $name = sanitizeInput($data['name']);
-                $email = sanitizeInput($data['email']);
-                $message = sanitizeInput($data['message']);
-                $captcha = $data['captcha'];
-                
-                error_log("Contact form data: " . json_encode(['name' => $name, 'email' => $email]));
-                
-                // Validate captcha
-                if (!validateCaptcha($captcha, $_SESSION['captcha'] ?? '')) {
-                    error_log("Contact captcha validation failed: " . json_encode(['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']));
-                    jsonResponse(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
-                }
-                
-                $stmt = $pdo->prepare("INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)");
-                $stmt->execute([$name, $email, $message]);
-                
-                error_log("Contact message saved: " . json_encode(['name' => $name, 'email' => $email]));
-                jsonResponse(['success' => true, 'message' => 'Sizning habaringiz yuborildi']);
-            }
-            break;
-
-        case 'chat-users':
-            if ($method === 'GET') {
-                error_log("Chat users request received");
-                $token = $_GET['token'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-                $token = str_replace('Bearer ', '', $token);
-                $search = $_GET['search'] ?? '';
-                
-                error_log("Chat users request data: " . json_encode(['search' => $search]));
-                
-                // Verify user session
-                $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
-                $stmt->execute([$token]);
-                $session = $stmt->fetch();
-                
-                if (!$session) {
-                    error_log("Invalid session for chat users: " . substr($token, 0, 10) . '...');
-                    jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
-                }
-                
-                $currentUserId = $session['user_id'];
-                
-                $whereClause = "WHERE u.id != ? AND u.is_admin = 0";
-                $params = [$currentUserId];
-                
-                if ($search) {
-                    $whereClause .= " AND u.username LIKE ?";
-                    $params[] = "%$search%";
-                }
-                
-                $sql = "SELECT u.id, u.username, u.avatar,
-                               (SELECT cm.message FROM chat_messages cm 
-                                WHERE (cm.sender_id = u.id AND cm.receiver_id = ?) 
-                                   OR (cm.sender_id = ? AND cm.receiver_id = u.id)
-                                ORDER BY cm.created_at DESC LIMIT 1) as last_message,
-                               (SELECT cm.created_at FROM chat_messages cm 
-                                WHERE (cm.sender_id = u.id AND cm.receiver_id = ?) 
-                                   OR (cm.sender_id = ? AND cm.receiver_id = u.id)
-                                ORDER BY cm.created_at DESC LIMIT 1) as last_message_time,
-                               (SELECT COUNT(*) FROM chat_messages cm 
-                                WHERE cm.sender_id = u.id AND cm.receiver_id = ? AND cm.is_read = 0) as unread_count
-                        FROM users u 
-                        $whereClause
-                        ORDER BY last_message_time DESC, u.username ASC";
-                
-                $params = array_merge([$currentUserId, $currentUserId, $currentUserId, $currentUserId, $currentUserId], $params);
-                $stmt = $pdo->prepare($sql);
-                $stmt->execute($params);
-                $users = $stmt->fetchAll();
-                
-                error_log("Chat users retrieved: " . json_encode(['count' => count($users), 'current_user_id' => $currentUserId]));
-                jsonResponse(['success' => true, 'users' => $users]);
-            }
-            break;
-            
-        case 'chat-messages':
-            if ($method === 'GET') {
-                error_log("Chat messages request received");
-                $token = $_GET['token'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-                $token = str_replace('Bearer ', '', $token);
-                $userId = $_GET['user_id'] ?? 0;
-                
-                error_log("Chat messages request data: " . json_encode(['user_id' => $userId]));
-                
-                // Verify user session
-                $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
-                $stmt->execute([$token]);
-                $session = $stmt->fetch();
-                
-                if (!$session) {
-                    error_log("Invalid session for chat messages: " . substr($token, 0, 10) . '...');
-                    jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
-                }
-                
-                $currentUserId = $session['user_id'];
-                
-                $stmt = $pdo->prepare("SELECT cm.*, u.username as sender_username, u.avatar as sender_avatar
-                                      FROM chat_messages cm
-                                      JOIN users u ON cm.sender_id = u.id
-                                      WHERE (cm.sender_id = ? AND cm.receiver_id = ?) 
-                                         OR (cm.sender_id = ? AND cm.receiver_id = ?)
-                                      ORDER BY cm.created_at ASC");
-                $stmt->execute([$currentUserId, $userId, $userId, $currentUserId]);
-                $messages = $stmt->fetchAll();
-                
-                // Mark messages as read
-                $stmt = $pdo->prepare("UPDATE chat_messages SET is_read = 1 
-                                      WHERE sender_id = ? AND receiver_id = ? AND is_read = 0");
-                $stmt->execute([$userId, $currentUserId]);
-                
-                error_log("Chat messages retrieved: " . json_encode(['count' => count($messages), 'between_users' => [$currentUserId, $userId]]));
-                jsonResponse(['success' => true, 'messages' => $messages]);
-            }
-            break;
-            
-        case 'send-message':
-            if ($method === 'POST') {
-                error_log("Send message request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    error_log("Invalid JSON data for send message");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $token = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
-                $token = str_replace('Bearer ', '', $token);
-                $receiverId = $data['receiver_id'];
-                $message = sanitizeInput($data['message']);
-                
-                error_log("Send message data: " . json_encode(['receiver_id' => $receiverId, 'message_length' => strlen($message)]));
-                
-                // Verify user session
-                $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
-                $stmt->execute([$token]);
-                $session = $stmt->fetch();
-                
-                if (!$session) {
-                    error_log("Invalid session for send message: " . substr($token, 0, 10) . '...');
-                    jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
-                }
-                
-                $stmt = $pdo->prepare("INSERT INTO chat_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)");
-                $stmt->execute([$session['user_id'], $receiverId, $message]);
-                
-                error_log("Message sent: " . json_encode(['sender_id' => $session['user_id'], 'receiver_id' => $receiverId]));
-                jsonResponse(['success' => true, 'message' => 'Xabar yuborildi']);
-            }
-            break;
-            
-        case 'profile':
-            if ($method === 'GET') {
-                $username = $_GET['username'] ?? '';
-                logSuccess("Profile request", ['username' => $username]);
-                
-                if (!$username) {
-                    logError("Username not provided for profile");
-                    jsonResponse(['success' => false, 'message' => 'Username kerak'], 400);
-                }
-                
-                $stmt = $pdo->prepare("SELECT u.*, 
-                                             (SELECT COUNT(*) FROM posts p WHERE p.author_id = u.id) as post_count,
-                                             (SELECT COUNT(*) FROM comments c WHERE c.user_id = u.id) as comment_count,
-                                             (SELECT COUNT(*) FROM likes l JOIN posts p ON l.post_id = p.id WHERE p.author_id = u.id) as like_count
-                                      FROM users u 
-                                      WHERE u.username = ?");
-                $stmt->execute([$username]);
-                $profile = $stmt->fetch();
-                
-                if ($profile) {
-                    // Remove sensitive data
-                    unset($profile['password']);
-                    logSuccess("Profile retrieved", ['username' => $username, 'user_id' => $profile['id']]);
-                    jsonResponse(['success' => true, 'profile' => $profile]);
-                } else {
-                    logError("Profile not found", ['username' => $username]);
-                    jsonResponse(['success' => false, 'message' => 'Foydalanuvchi topilmadi'], 404);
-                }
-            }
-            break;
-            
-        case 'newsletter-subscribe':
-            if ($method === 'POST') {
-                logSuccess("Newsletter subscribe request received");
-                $data = json_decode(file_get_contents('php://input'), true);
-                
-                if (!$data) {
-                    logError("Invalid JSON data for newsletter");
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
-                }
-                
-                $email = sanitizeInput($data['email']);
-                
-                logSuccess("Newsletter subscription attempt", ['email' => $email]);
-                
-                // Validate email format
-                if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-                    logError("Invalid email format for newsletter", ['email' => $email]);
-                    jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri email format']);
-                }
-                
-                // Check if already subscribed
-                $stmt = $pdo->prepare("SELECT id FROM newsletter_subscribers WHERE email = ?");
-                $stmt->execute([$email]);
-                if ($stmt->fetch()) {
-                    logError("Email already subscribed", ['email' => $email]);
-                    jsonResponse(['success' => false, 'message' => 'Bu email allaqachon obuna bo\'lgan']);
-                }
-                
-                // Add to newsletter
-                $stmt = $pdo->prepare("INSERT INTO newsletter_subscribers (email, created_at) VALUES (?, NOW())");
-                $stmt->execute([$email]);
-                
-                logSuccess("Newsletter subscription successful", ['email' => $email]);
-                jsonResponse(['success' => true, 'message' => 'Muvaffaqiyatli obuna bo\'ldingiz! 🎉']);
-            }
-            break;
-
-        case 'admin-newsletter':
-            if ($method === 'GET') {
-                logSuccess("Admin newsletter request received");
-                // Verify admin session
-                $token = $_GET['token'] ?? '';
-                $stmt = $pdo->prepare("SELECT u.* FROM users u 
-                                      JOIN user_sessions s ON u.id = s.user_id 
-                                      WHERE s.session_token = ? AND s.expires_at > NOW() AND u.is_admin = 1");
-                $stmt->execute([$token]);
                 $admin = $stmt->fetch();
                 
-                if (!$admin) {
-                    logError("Unauthorized admin newsletter access", ['token' => substr($token, 0, 10) . '...']);
-                    jsonResponse(['success' => false, 'message' => 'Admin huquqi kerak'], 401);
+                if ($admin && password_verify($password, $admin['password'])) {
+                    $_SESSION['admin_id'] = $admin['id'];
+                    $_SESSION['admin_username'] = $admin['username'];
+                    logSuccess("Admin login successful", ['admin_id' => $admin['id']]);
+                    echo json_encode(['success' => true, 'message' => 'Muvaffaqiyatli kirdingiz!']);
+                } else {
+                    logError("Admin login failed", ['email' => $email]);
+                    echo json_encode(['success' => false, 'message' => 'Email yoki parol noto\'g\'ri']);
+                }
+                exit;
+                
+            case 'create_post':
+                if (!isset($_SESSION['admin_id'])) {
+                    echo json_encode(['success' => false, 'message' => 'Tizimga kiring']);
+                    exit;
                 }
                 
-                $stmt = $pdo->query("SELECT * FROM newsletter_subscribers ORDER BY created_at DESC");
-                $subscribers = $stmt->fetchAll();
+                logSuccess("Post creation attempt");
+                $title = sanitizeInput($_POST['title'] ?? '');
+                $content = sanitizeInput($_POST['content'] ?? '');
+                $hashtags = sanitizeInput($_POST['hashtags'] ?? '');
+                $image = '';
                 
-                logSuccess("Admin newsletter data retrieved", ['count' => count($subscribers)]);
-                jsonResponse(['success' => true, 'subscribers' => $subscribers]);
-            }
-            break;
-
-        case 'test':
-            error_log("Test endpoint called");
-            jsonResponse(['success' => true, 'message' => 'API ishlamoqda', 'timestamp' => date('Y-m-d H:i:s')]);
-            break;
-
-        default:
-            error_log("Unknown API action: " . json_encode(['action' => $request, 'method' => $method]));
-            jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri so\'rov'], 404);
+                // Validate required fields
+                if (empty($title) || empty($content)) {
+                    logError("Post creation failed - missing required fields", ['title' => $title, 'content' => !empty($content)]);
+                    echo json_encode(['success' => false, 'message' => 'Sarlavha va kontent majburiy']);
+                    exit;
+                }
+                
+                // Handle image upload
+                if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
+                    $uploadDir = __DIR__ . '/uploads/';
+                    if (!is_dir($uploadDir)) {
+                        mkdir($uploadDir, 0755, true);
+                    }
+                    
+                    $imageExtension = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
+                    $imageName = uniqid() . '.' . $imageExtension;
+                    $imagePath = $uploadDir . $imageName;
+                    
+                    if (move_uploaded_file($_FILES['image']['tmp_name'], $imagePath)) {
+                        $image = $imageName;
+                        logInfo("Image uploaded successfully", ['image' => $imageName]);
+                    }
+                }
+                
+                // Generate slug
+                $slug = strtolower(trim(preg_replace('/[^A-Za-z0-9-]+/', '-', $title)));
+                
+                $stmt = $pdo->prepare("INSERT INTO posts (title, slug, content, image, hashtags, author_id, status) VALUES (?, ?, ?, ?, ?, ?, 'published')");
+                $stmt->execute([$title, $slug, $content, $image, $hashtags, $_SESSION['admin_id']]);
+                
+                logSuccess("Post created successfully", ['title' => $title, 'admin_id' => $_SESSION['admin_id']]);
+                echo json_encode(['success' => true, 'message' => 'Post muvaffaqiyatli yaratildi!']);
+                exit;
+                
+            case 'delete_post':
+                if (!isset($_SESSION['admin_id'])) {
+                    echo json_encode(['success' => false, 'message' => 'Tizimga kiring']);
+                    exit;
+                }
+                
+                $postId = (int)($_POST['post_id'] ?? 0);
+                
+                if ($postId > 0) {
+                    $stmt = $pdo->prepare("DELETE FROM posts WHERE id = ?");
+                    $stmt->execute([$postId]);
+                    logSuccess("Post deleted", ['post_id' => $postId]);
+                    echo json_encode(['success' => true, 'message' => 'Post o\'chirildi']);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Noto\'g\'ri post ID']);
+                }
+                exit;
+                
+            case 'delete_user':
+                if (!isset($_SESSION['admin_id'])) {
+                    echo json_encode(['success' => false, 'message' => 'Tizimga kiring']);
+                    exit;
+                }
+                
+                $userId = (int)($_POST['user_id'] ?? 0);
+                
+                if ($userId > 0) {
+                    $stmt = $pdo->prepare("DELETE FROM users WHERE id = ? AND is_admin = 0");
+                    $stmt->execute([$userId]);
+                    logSuccess("User deleted", ['user_id' => $userId]);
+                    echo json_encode(['success' => true, 'message' => 'Foydalanuvchi o\'chirildi']);
+                } else {
+                    echo json_encode(['success' => false, 'message' => 'Noto\'g\'ri foydalanuvchi ID']);
+                }
+                exit;
+                
+            case 'logout':
+                session_destroy();
+                echo json_encode(['success' => true, 'message' => 'Chiqildi']);
+                exit;
+        }
+    } catch (Exception $e) {
+        logError("Panel action error", ['error' => $e->getMessage(), 'action' => $_POST['action'] ?? '']);
+        echo json_encode(['success' => false, 'message' => 'Server xatosi: ' . $e->getMessage()]);
+        exit;
     }
+}
 
-} catch (Exception $e) {
-    $errorDetails = [
-        'message' => $e->getMessage(),
-        'file' => $e->getFile(),
-        'line' => $e->getLine(),
-        'trace' => $e->getTraceAsString(),
-        'request_uri' => $_SERVER['REQUEST_URI'] ?? '',
-        'method' => $_SERVER['REQUEST_METHOD'] ?? '',
-        'action' => $_GET['action'] ?? '',
-        'timestamp' => date('Y-m-d H:i:s')
-    ];
-    
-    error_log("CRITICAL API ERROR: " . json_encode($errorDetails));
-    jsonResponse(['success' => false, 'message' => 'Server xatosi yuz berdi'], 500);
+// Check if admin is logged in
+$isLoggedIn = isset($_SESSION['admin_id']);
+
+// Get statistics if logged in
+$stats = [];
+if ($isLoggedIn) {
+    try {
+        $stmt = $pdo->query("SELECT COUNT(*) as count FROM users");
+        $stats['users'] = $stmt->fetch()['count'];
+        
+        $stmt = $pdo->query("SELECT COUNT(*) as count FROM posts");
+        $stats['posts'] = $stmt->fetch()['count'];
+        
+        $stmt = $pdo->query("SELECT COUNT(*) as count FROM comments");
+        $stats['comments'] = $stmt->fetch()['count'];
+        
+        $stmt = $pdo->query("SELECT COUNT(*) as count FROM contact_messages WHERE is_read = 0");
+        $stats['unread_messages'] = $stmt->fetch()['count'];
+        
+        $stmt = $pdo->query("SELECT COUNT(*) as count FROM newsletter_subscribers WHERE is_active = 1");
+        $stats['newsletter_subscribers'] = $stmt->fetch()['count'];
+        
+        // Get recent posts
+        $stmt = $pdo->prepare("SELECT p.*, u.username FROM posts p JOIN users u ON p.author_id = u.id ORDER BY p.created_at DESC LIMIT 10");
+        $stmt->execute();
+        $recentPosts = $stmt->fetchAll();
+        
+        // Get recent users
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE is_admin = 0 ORDER BY created_at DESC LIMIT 10");
+        $stmt->execute();
+        $recentUsers = $stmt->fetchAll();
+        
+        // Get contact messages
+        $stmt = $pdo->prepare("SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 20");
+        $stmt->execute();
+        $contactMessages = $stmt->fetchAll();
+        
+    } catch (Exception $e) {
+        logError("Error loading admin statistics", ['error' => $e->getMessage()]);
+        $stats = ['users' => 0, 'posts' => 0, 'comments' => 0, 'unread_messages' => 0, 'newsletter_subscribers' => 0];
+        $recentPosts = [];
+        $recentUsers = [];
+        $contactMessages = [];
+    }
 }
 ?>
+
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Panel - CodeBlog</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .login-form {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            max-width: 400px;
+            margin: 100px auto;
+        }
+        
+        .admin-panel {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            padding: 20px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border-left: 4px solid #667eea;
+        }
+        
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .tabs {
+            display: flex;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .tab {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            background: white;
+            border-bottom: 3px solid #667eea;
+            color: #667eea;
+        }
+        
+        .tab-content {
+            padding: 20px;
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        
+        .btn-sm {
+            padding: 8px 16px;
+            font-size: 12px;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .table th,
+        .table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .captcha-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .captcha-image {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        
+        .refresh-btn {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .refresh-btn:hover {
+            background: #5a6268;
+        }
+        
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .alert-danger {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+        
+        .mt-3 {
+            margin-top: 1rem;
+        }
+        
+        .mb-3 {
+            margin-bottom: 1rem;
+        }
+        
+        .d-flex {
+            display: flex;
+        }
+        
+        .justify-content-between {
+            justify-content: space-between;
+        }
+        
+        .align-items-center {
+            align-items: center;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .stats {
+                grid-template-columns: 1fr;
+            }
+            
+            .tabs {
+                flex-wrap: wrap;
+            }
+            
+            .table {
+                font-size: 12px;
+            }
+            
+            .table th,
+            .table td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <?php if (!$isLoggedIn): ?>
+            <!-- Login Form -->
+            <div class="login-form">
+                <h2 class="text-center mb-3">Admin Panel</h2>
+                <p class="text-center mb-3" style="color: #666;">Tizimga kirish uchun ma'lumotlaringizni kiriting</p>
+                
+                <form id="loginForm">
+                    <div class="form-group">
+                        <label for="email">Email</label>
+                        <input type="email" id="email" name="email" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="password">Parol</label>
+                        <input type="password" id="password" name="password" class="form-control" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="captcha">Xavfsizlik kodi</label>
+                        <div class="captcha-container">
+                            <img src="./api/captcha.php?<?= time() ?>" alt="Captcha" class="captcha-image" id="captchaImage">
+                            <button type="button" class="refresh-btn" onclick="refreshCaptcha()">Yangilash</button>
+                        </div>
+                        <input type="text" id="captcha" name="captcha" class="form-control" placeholder="Yuqoridagi kodni kiriting" required>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">Kirish</button>
+                </form>
+                
+                <div class="mt-3 text-center">
+                    <small style="color: #666;">
+                        Default: admin@blog.com / admin123
+                    </small>
+                </div>
+            </div>
+        <?php else: ?>
+            <!-- Admin Panel -->
+            <div class="admin-panel">
+                <div class="header">
+                    <div>
+                        <h1>Admin Panel</h1>
+                        <p>Xush kelibsiz, <?= htmlspecialchars($_SESSION['admin_username']) ?>!</p>
+                    </div>
+                    <button class="btn btn-danger" onclick="logout()">Chiqish</button>
+                </div>
+                
+                <!-- Statistics -->
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-number"><?= $stats['users'] ?></div>
+                        <div>Foydalanuvchilar</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number"><?= $stats['posts'] ?></div>
+                        <div>Postlar</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number"><?= $stats['comments'] ?></div>
+                        <div>Izohlar</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number"><?= $stats['unread_messages'] ?></div>
+                        <div>O'qilmagan xabarlar</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number"><?= $stats['newsletter_subscribers'] ?></div>
+                        <div>Newsletter obunachilari</div>
+                    </div>
+                </div>
+                
+                <!-- Tabs -->
+                <div class="tabs">
+                    <button class="tab active" onclick="showTab('posts')">Postlar</button>
+                    <button class="tab" onclick="showTab('users')">Foydalanuvchilar</button>
+                    <button class="tab" onclick="showTab('messages')">Xabarlar</button>
+                    <button class="tab" onclick="showTab('create-post')">Post yaratish</button>
+                </div>
+                
+                <!-- Posts Tab -->
+                <div id="posts" class="tab-content active">
+                    <h3>So'nggi postlar</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Sarlavha</th>
+                                <th>Muallif</th>
+                                <th>Ko'rishlar</th>
+                                <th>Sana</th>
+                                <th>Amallar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($recentPosts as $post): ?>
+                            <tr>
+                                <td><?= $post['id'] ?></td>
+                                <td><?= htmlspecialchars($post['title']) ?></td>
+                                <td><?= htmlspecialchars($post['username']) ?></td>
+                                <td><?= $post['views'] ?></td>
+                                <td><?= date('d.m.Y', strtotime($post['created_at'])) ?></td>
+                                <td>
+                                    <button class="btn btn-danger btn-sm" onclick="deletePost(<?= $post['id'] ?>)">O'chirish</button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Users Tab -->
+                <div id="users" class="tab-content">
+                    <h3>Foydalanuvchilar</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Tasdiqlangan</th>
+                                <th>Ro'yxatdan o'tgan</th>
+                                <th>Amallar</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($recentUsers as $user): ?>
+                            <tr>
+                                <td><?= $user['id'] ?></td>
+                                <td><?= htmlspecialchars($user['username']) ?></td>
+                                <td><?= htmlspecialchars($user['email']) ?></td>
+                                <td><?= $user['is_verified'] ? '✅' : '❌' ?></td>
+                                <td><?= date('d.m.Y', strtotime($user['created_at'])) ?></td>
+                                <td>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteUser(<?= $user['id'] ?>)">O'chirish</button>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Messages Tab -->
+                <div id="messages" class="tab-content">
+                    <h3>Bog'lanish xabarlari</h3>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Ism</th>
+                                <th>Email</th>
+                                <th>Xabar</th>
+                                <th>Sana</th>
+                                <th>Holat</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($contactMessages as $message): ?>
+                            <tr>
+                                <td><?= $message['id'] ?></td>
+                                <td><?= htmlspecialchars($message['name']) ?></td>
+                                <td><?= htmlspecialchars($message['email']) ?></td>
+                                <td><?= htmlspecialchars(substr($message['message'], 0, 50)) ?>...</td>
+                                <td><?= date('d.m.Y H:i', strtotime($message['created_at'])) ?></td>
+                                <td><?= $message['is_read'] ? 'O\'qilgan' : 'Yangi' ?></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+                
+                <!-- Create Post Tab -->
+                <div id="create-post" class="tab-content">
+                    <h3>Yangi post yaratish</h3>
+                    <form id="createPostForm" enctype="multipart/form-data">
+                        <div class="form-group">
+                            <label for="title">Sarlavha</label>
+                            <input type="text" id="title" name="title" class="form-control" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="content">Kontent</label>
+                            <textarea id="content" name="content" class="form-control" rows="10" required></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="hashtags">Hashtaglar (vergul bilan ajrating)</label>
+                            <input type="text" id="hashtags" name="hashtags" class="form-control" placeholder="javascript, react, programming">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="image">Rasm</label>
+                            <input type="file" id="image" name="image" class="form-control" accept="image/*">
+                        </div>
+                        
+                        <button type="submit" class="btn btn-primary">Post yaratish</button>
+                    </form>
+                </div>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <script>
+        // Refresh captcha
+        function refreshCaptcha() {
+            document.getElementById('captchaImage').src = './api/captcha.php?' + Date.now();
+        }
+        
+        // Show tab
+        function showTab(tabName) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // Login form
+        <?php if (!$isLoggedIn): ?>
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('action', 'login');
+            formData.append('email', document.getElementById('email').value);
+            formData.append('password', document.getElementById('password').value);
+            formData.append('captcha', document.getElementById('captcha').value);
+            
+            try {
+                const response = await fetch('panel.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    location.reload();
+                } else {
+                    alert(data.message);
+                    refreshCaptcha();
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Xatolik yuz berdi');
+            }
+        });
+        <?php endif; ?>
+        
+        // Create post form
+        <?php if ($isLoggedIn): ?>
+        document.getElementById('createPostForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData();
+            formData.append('action', 'create_post');
+            formData.append('title', document.getElementById('title').value);
+            formData.append('content', document.getElementById('content').value);
+            formData.append('hashtags', document.getElementById('hashtags').value);
+            
+            const imageFile = document.getElementById('image').files[0];
+            if (imageFile) {
+                formData.append('image', imageFile);
+            }
+            
+            try {
+                const response = await fetch('panel.php', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    document.getElementById('createPostForm').reset();
+                    location.reload();
+                } else {
+                    alert(data.message);
+                }
+            } catch (error) {
+                console.error('Create post error:', error);
+                alert('Xatolik yuz berdi');
+            }
+        });
+        
+        // Delete post
+        function deletePost(postId) {
+            if (confirm('Rostdan ham bu postni o\'chirmoqchimisiz?')) {
+                const formData = new FormData();
+                formData.append('action', 'delete_post');
+                formData.append('post_id', postId);
+                
+                fetch('panel.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        location.reload();
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Delete error:', error);
+                    alert('Xatolik yuz berdi');
+                });
+            }
+        }
+        
+        // Delete user
+        function deleteUser(userId) {
+            if (confirm('Rostdan ham bu foydalanuvchini o\'chirmoqchimisiz?')) {
+                const formData = new FormData();
+                formData.append('action', 'delete_user');
+                formData.append('user_id', userId);
+                
+                fetch('panel.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        location.reload();
+                    } else {
+                        alert(data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Delete error:', error);
+                    alert('Xatolik yuz berdi');
+                });
+            }
+        }
+        
+        // Logout
+        function logout() {
+            if (confirm('Rostdan ham chiqmoqchimisiz?')) {
+                const formData = new FormData();
+                formData.append('action', 'logout');
+                
+                fetch('panel.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(() => {
+                    location.reload();
+                })
+                .catch(error => {
+                    console.error('Logout error:', error);
+                    location.reload();
+                });
+            }
+        }
+        <?php endif; ?>
+    </script>
+</body>
+</html>

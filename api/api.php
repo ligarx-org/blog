@@ -38,30 +38,30 @@ try {
     switch ($request) {
         case 'register':
             if ($method === 'POST') {
-                error_log("Register request received");
+                logInfo("Register request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data received for registration");
+                    logError("Invalid JSON data received for registration");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $username = sanitizeInput($data['username']);
-                $email = sanitizeInput($data['email']);
-                $password = $data['password'];
-                $captcha = $data['captcha'];
+                $username = sanitizeInput($data['username'] ?? '');
+                $email = sanitizeInput($data['email'] ?? '');
+                $password = $data['password'] ?? '';
+                $captcha = $data['captcha'] ?? '';
                 
-                error_log("Registration data processed: " . json_encode(['username' => $username, 'email' => $email]));
+                logInfo("Registration data processed", ['username' => $username, 'email' => $email]);
                 
                 // Validate captcha
                 if (!validateCaptcha($captcha, $_SESSION['captcha'] ?? '')) {
-                    error_log("Captcha validation failed: " . json_encode(['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']));
+                    logError("Captcha validation failed", ['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']);
                     jsonResponse(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
                 }
                 
                 // Validate email
                 if (!validateEmail($email)) {
-                    error_log("Email validation failed: " . $email);
+                    logError("Email validation failed", ['email' => $email]);
                     jsonResponse(['success' => false, 'message' => 'Faqat @gmail.com manzillari qabul qilinadi']);
                 }
                 
@@ -69,7 +69,7 @@ try {
                 $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? OR email = ?");
                 $stmt->execute([$username, $email]);
                 if ($stmt->fetch()) {
-                    error_log("User already exists: " . json_encode(['username' => $username, 'email' => $email]));
+                    logError("User already exists", ['username' => $username, 'email' => $email]);
                     jsonResponse(['success' => false, 'message' => 'Foydalanuvchi yoki email allaqachon mavjud']);
                 }
                 
@@ -82,10 +82,10 @@ try {
                         'email' => $email,
                         'password' => password_hash($password, PASSWORD_DEFAULT)
                     ];
-                    error_log("Registration email sent: " . $email);
+                    logSuccess("Registration email sent", ['email' => $email]);
                     jsonResponse(['success' => true, 'message' => 'Tasdiqlash kodi emailingizga yuborildi']);
                 } else {
-                    error_log("Email sending failed: " . json_encode($result));
+                    logError("Email sending failed", $result);
                     jsonResponse(['success' => false, 'message' => $result['message']]);
                 }
             }
@@ -93,19 +93,19 @@ try {
             
         case 'verify-email':
             if ($method === 'POST') {
-                error_log("Email verification request received");
+                logInfo("Email verification request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data for email verification");
+                    logError("Invalid JSON data for email verification");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $code = $data['code'];
+                $code = $data['code'] ?? '';
                 $email = $_SESSION['temp_user']['email'] ?? '';
                 
                 if (!$email) {
-                    error_log("No temp user email found in session");
+                    logError("No temp user email found in session");
                     jsonResponse(['success' => false, 'message' => 'Sessiya muddati tugagan']);
                 }
                 
@@ -117,10 +117,10 @@ try {
                     $stmt->execute([$tempUser['username'], $tempUser['email'], $tempUser['password']]);
                     
                     unset($_SESSION['temp_user']);
-                    error_log("User registration completed: " . $email);
+                    logSuccess("User registration completed", ['email' => $email]);
                     jsonResponse(['success' => true, 'message' => 'Ro\'yxatdan o\'tish muvaffaqiyatli yakunlandi!']);
                 } else {
-                    error_log("Email verification failed: " . json_encode($result));
+                    logError("Email verification failed", $result);
                     jsonResponse(['success' => false, 'message' => $result['message']]);
                 }
             }
@@ -128,23 +128,23 @@ try {
             
         case 'login':
             if ($method === 'POST') {
-                error_log("Login request received");
+                logInfo("Login request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data for login");
+                    logError("Invalid JSON data for login");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $email = sanitizeInput($data['email']);
-                $password = $data['password'];
-                $captcha = $data['captcha'];
+                $email = sanitizeInput($data['email'] ?? '');
+                $password = $data['password'] ?? '';
+                $captcha = $data['captcha'] ?? '';
                 
-                error_log("Login attempt: " . $email);
+                logInfo("Login attempt", ['email' => $email]);
                 
                 // Validate captcha
                 if (!validateCaptcha($captcha, $_SESSION['captcha'] ?? '')) {
-                    error_log("Login captcha validation failed: " . json_encode(['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']));
+                    logError("Login captcha validation failed", ['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']);
                     jsonResponse(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
                 }
                 
@@ -161,7 +161,7 @@ try {
                     $stmt->execute([$user['id'], $sessionToken, $expiresAt]);
                     
                     unset($user['password']);
-                    error_log("User logged in successfully: " . json_encode(['user_id' => $user['id'], 'email' => $email]));
+                    logSuccess("User logged in successfully", ['user_id' => $user['id'], 'email' => $email]);
                     jsonResponse([
                         'success' => true,
                         'message' => 'Muvaffaqiyatli tizimga kirdingiz!',
@@ -169,7 +169,7 @@ try {
                         'token' => $sessionToken
                     ]);
                 } else {
-                    error_log("Login failed - invalid credentials: " . $email);
+                    logError("Login failed - invalid credentials", ['email' => $email]);
                     jsonResponse(['success' => false, 'message' => 'Email yoki parol noto\'g\'ri']);
                 }
             }
@@ -177,16 +177,16 @@ try {
             
         case 'posts':
             if ($method === 'GET') {
-                error_log("Posts request received");
+                logInfo("Posts request received");
                 $page = (int)($_GET['page'] ?? 1);
                 $limit = (int)($_GET['limit'] ?? 10);
                 $search = $_GET['search'] ?? '';
                 $category = $_GET['category'] ?? '';
                 $offset = ($page - 1) * $limit;
                 
-                error_log("Posts query parameters: " . json_encode(['page' => $page, 'limit' => $limit, 'search' => $search, 'category' => $category]));
+                logInfo("Posts query parameters", ['page' => $page, 'limit' => $limit, 'search' => $search, 'category' => $category]);
                 
-                $whereClause = "WHERE 1=1";
+                $whereClause = "WHERE p.status = 'published'";
                 $params = [];
                 
                 if ($search) {
@@ -211,13 +211,13 @@ try {
                         ORDER BY p.created_at DESC 
                         LIMIT $limit OFFSET $offset";
                 
-                error_log("Executing posts query: " . json_encode(['sql' => $sql, 'params' => $params]));
+                logInfo("Executing posts query", ['sql' => $sql, 'params' => $params]);
                 
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
                 $posts = $stmt->fetchAll();
                 
-                error_log("Posts retrieved successfully: " . count($posts));
+                logSuccess("Posts retrieved successfully", ['count' => count($posts)]);
                 jsonResponse(['success' => true, 'posts' => $posts]);
             }
             break;
@@ -225,14 +225,14 @@ try {
         case 'post':
             if ($method === 'GET') {
                 $id = $_GET['id'] ?? 0;
-                error_log("Single post request: " . $id);
+                logInfo("Single post request", ['post_id' => $id]);
                 
                 $stmt = $pdo->prepare("SELECT p.*, u.username, u.avatar,
                                              COALESCE((SELECT COUNT(*) FROM likes l WHERE l.post_id = p.id), 0) as like_count,
                                              COALESCE((SELECT COUNT(*) FROM comments c WHERE c.post_id = p.id), 0) as comment_count
                                       FROM posts p 
                                       JOIN users u ON p.author_id = u.id 
-                                      WHERE p.id = ?");
+                                      WHERE p.id = ? AND p.status = 'published'");
                 $stmt->execute([$id]);
                 $post = $stmt->fetch();
                 
@@ -241,10 +241,10 @@ try {
                     $stmt = $pdo->prepare("UPDATE posts SET views = COALESCE(views, 0) + 1 WHERE id = ?");
                     $stmt->execute([$id]);
                     
-                    error_log("Post retrieved and view incremented: " . json_encode(['post_id' => $id, 'title' => $post['title']]));
+                    logSuccess("Post retrieved and view incremented", ['post_id' => $id, 'title' => $post['title']]);
                     jsonResponse(['success' => true, 'post' => $post]);
                 } else {
-                    error_log("Post not found: " . $id);
+                    logError("Post not found", ['post_id' => $id]);
                     jsonResponse(['success' => false, 'message' => 'Post topilmadi'], 404);
                 }
             }
@@ -252,18 +252,18 @@ try {
             
         case 'like':
             if ($method === 'POST') {
-                error_log("Like request received");
+                logInfo("Like request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data for like");
+                    logError("Invalid JSON data for like");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $token = $data['token'];
-                $postId = $data['post_id'];
+                $token = $data['token'] ?? '';
+                $postId = $data['post_id'] ?? 0;
                 
-                error_log("Like request data: " . json_encode(['post_id' => $postId]));
+                logInfo("Like request data", ['post_id' => $postId]);
                 
                 // Verify user session
                 $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
@@ -271,7 +271,7 @@ try {
                 $session = $stmt->fetch();
                 
                 if (!$session) {
-                    error_log("Invalid session for like: " . substr($token, 0, 10) . '...');
+                    logError("Invalid session for like", ['token' => substr($token, 0, 10) . '...']);
                     jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
                 }
                 
@@ -299,7 +299,7 @@ try {
                 $stmt->execute([$postId]);
                 $likeCount = $stmt->fetch()['count'];
                 
-                error_log("Like action completed: " . json_encode(['action' => $action, 'post_id' => $postId, 'user_id' => $userId, 'like_count' => $likeCount]));
+                logSuccess("Like action completed", ['action' => $action, 'post_id' => $postId, 'user_id' => $userId, 'like_count' => $likeCount]);
                 jsonResponse(['success' => true, 'action' => $action, 'like_count' => $likeCount]);
             }
             break;
@@ -307,7 +307,7 @@ try {
         case 'comments':
             if ($method === 'GET') {
                 $postId = $_GET['post_id'] ?? 0;
-                error_log("Comments request: " . $postId);
+                logInfo("Comments request", ['post_id' => $postId]);
                 
                 $stmt = $pdo->prepare("SELECT c.*, u.username, u.avatar 
                                       FROM comments c 
@@ -317,22 +317,22 @@ try {
                 $stmt->execute([$postId]);
                 $comments = $stmt->fetchAll();
                 
-                error_log("Comments retrieved: " . json_encode(['post_id' => $postId, 'count' => count($comments)]));
+                logSuccess("Comments retrieved", ['post_id' => $postId, 'count' => count($comments)]);
                 jsonResponse(['success' => true, 'comments' => $comments]);
             } elseif ($method === 'POST') {
-                error_log("Add comment request received");
+                logInfo("Add comment request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data for comment");
+                    logError("Invalid JSON data for comment");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $token = $data['token'];
-                $postId = $data['post_id'];
-                $content = sanitizeInput($data['content']);
+                $token = $data['token'] ?? '';
+                $postId = $data['post_id'] ?? 0;
+                $content = sanitizeInput($data['content'] ?? '');
                 
-                error_log("Comment data: " . json_encode(['post_id' => $postId, 'content_length' => strlen($content)]));
+                logInfo("Comment data", ['post_id' => $postId, 'content_length' => strlen($content)]);
                 
                 // Verify user session
                 $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
@@ -340,57 +340,57 @@ try {
                 $session = $stmt->fetch();
                 
                 if (!$session) {
-                    error_log("Invalid session for comment: " . substr($token, 0, 10) . '...');
+                    logError("Invalid session for comment", ['token' => substr($token, 0, 10) . '...']);
                     jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
                 }
                 
                 $stmt = $pdo->prepare("INSERT INTO comments (post_id, user_id, content) VALUES (?, ?, ?)");
                 $stmt->execute([$postId, $session['user_id'], $content]);
                 
-                error_log("Comment added: " . json_encode(['post_id' => $postId, 'user_id' => $session['user_id']]));
+                logSuccess("Comment added", ['post_id' => $postId, 'user_id' => $session['user_id']]);
                 jsonResponse(['success' => true, 'message' => 'Izoh qo\'shildi']);
             }
             break;
             
         case 'contact':
             if ($method === 'POST') {
-                error_log("Contact request received");
+                logInfo("Contact request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data for contact");
+                    logError("Invalid JSON data for contact");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $name = sanitizeInput($data['name']);
-                $email = sanitizeInput($data['email']);
-                $message = sanitizeInput($data['message']);
-                $captcha = $data['captcha'];
+                $name = sanitizeInput($data['name'] ?? '');
+                $email = sanitizeInput($data['email'] ?? '');
+                $message = sanitizeInput($data['message'] ?? '');
+                $captcha = $data['captcha'] ?? '';
                 
-                error_log("Contact form data: " . json_encode(['name' => $name, 'email' => $email]));
+                logInfo("Contact form data", ['name' => $name, 'email' => $email]);
                 
                 // Validate captcha
                 if (!validateCaptcha($captcha, $_SESSION['captcha'] ?? '')) {
-                    error_log("Contact captcha validation failed: " . json_encode(['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']));
+                    logError("Contact captcha validation failed", ['provided' => $captcha, 'expected' => $_SESSION['captcha'] ?? '']);
                     jsonResponse(['success' => false, 'message' => 'Captcha noto\'g\'ri']);
                 }
                 
                 $stmt = $pdo->prepare("INSERT INTO contact_messages (name, email, message) VALUES (?, ?, ?)");
                 $stmt->execute([$name, $email, $message]);
                 
-                error_log("Contact message saved: " . json_encode(['name' => $name, 'email' => $email]));
+                logSuccess("Contact message saved", ['name' => $name, 'email' => $email]);
                 jsonResponse(['success' => true, 'message' => 'Sizning habaringiz yuborildi']);
             }
             break;
 
         case 'chat-users':
             if ($method === 'GET') {
-                error_log("Chat users request received");
+                logInfo("Chat users request received");
                 $token = $_GET['token'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? '';
                 $token = str_replace('Bearer ', '', $token);
                 $search = $_GET['search'] ?? '';
                 
-                error_log("Chat users request data: " . json_encode(['search' => $search]));
+                logInfo("Chat users request data", ['search' => $search]);
                 
                 // Verify user session
                 $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
@@ -398,7 +398,7 @@ try {
                 $session = $stmt->fetch();
                 
                 if (!$session) {
-                    error_log("Invalid session for chat users: " . substr($token, 0, 10) . '...');
+                    logError("Invalid session for chat users", ['token' => substr($token, 0, 10) . '...']);
                     jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
                 }
                 
@@ -432,19 +432,19 @@ try {
                 $stmt->execute($params);
                 $users = $stmt->fetchAll();
                 
-                error_log("Chat users retrieved: " . json_encode(['count' => count($users), 'current_user_id' => $currentUserId]));
+                logSuccess("Chat users retrieved", ['count' => count($users), 'current_user_id' => $currentUserId]);
                 jsonResponse(['success' => true, 'users' => $users]);
             }
             break;
             
         case 'chat-messages':
             if ($method === 'GET') {
-                error_log("Chat messages request received");
+                logInfo("Chat messages request received");
                 $token = $_GET['token'] ?? $_SERVER['HTTP_AUTHORIZATION'] ?? '';
                 $token = str_replace('Bearer ', '', $token);
                 $userId = $_GET['user_id'] ?? 0;
                 
-                error_log("Chat messages request data: " . json_encode(['user_id' => $userId]));
+                logInfo("Chat messages request data", ['user_id' => $userId]);
                 
                 // Verify user session
                 $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
@@ -452,7 +452,7 @@ try {
                 $session = $stmt->fetch();
                 
                 if (!$session) {
-                    error_log("Invalid session for chat messages: " . substr($token, 0, 10) . '...');
+                    logError("Invalid session for chat messages", ['token' => substr($token, 0, 10) . '...']);
                     jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
                 }
                 
@@ -472,27 +472,27 @@ try {
                                       WHERE sender_id = ? AND receiver_id = ? AND is_read = 0");
                 $stmt->execute([$userId, $currentUserId]);
                 
-                error_log("Chat messages retrieved: " . json_encode(['count' => count($messages), 'between_users' => [$currentUserId, $userId]]));
+                logSuccess("Chat messages retrieved", ['count' => count($messages), 'between_users' => [$currentUserId, $userId]]);
                 jsonResponse(['success' => true, 'messages' => $messages]);
             }
             break;
             
         case 'send-message':
             if ($method === 'POST') {
-                error_log("Send message request received");
+                logInfo("Send message request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
-                    error_log("Invalid JSON data for send message");
+                    logError("Invalid JSON data for send message");
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
                 $token = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
                 $token = str_replace('Bearer ', '', $token);
-                $receiverId = $data['receiver_id'];
-                $message = sanitizeInput($data['message']);
+                $receiverId = $data['receiver_id'] ?? 0;
+                $message = sanitizeInput($data['message'] ?? '');
                 
-                error_log("Send message data: " . json_encode(['receiver_id' => $receiverId, 'message_length' => strlen($message)]));
+                logInfo("Send message data", ['receiver_id' => $receiverId, 'message_length' => strlen($message)]);
                 
                 // Verify user session
                 $stmt = $pdo->prepare("SELECT user_id FROM user_sessions WHERE session_token = ? AND expires_at > NOW()");
@@ -500,14 +500,14 @@ try {
                 $session = $stmt->fetch();
                 
                 if (!$session) {
-                    error_log("Invalid session for send message: " . substr($token, 0, 10) . '...');
+                    logError("Invalid session for send message", ['token' => substr($token, 0, 10) . '...']);
                     jsonResponse(['success' => false, 'message' => 'Tizimga kiring'], 401);
                 }
                 
                 $stmt = $pdo->prepare("INSERT INTO chat_messages (sender_id, receiver_id, message) VALUES (?, ?, ?)");
                 $stmt->execute([$session['user_id'], $receiverId, $message]);
                 
-                error_log("Message sent: " . json_encode(['sender_id' => $session['user_id'], 'receiver_id' => $receiverId]));
+                logSuccess("Message sent", ['sender_id' => $session['user_id'], 'receiver_id' => $receiverId]);
                 jsonResponse(['success' => true, 'message' => 'Xabar yuborildi']);
             }
             break;
@@ -515,7 +515,7 @@ try {
         case 'profile':
             if ($method === 'GET') {
                 $username = $_GET['username'] ?? '';
-                logSuccess("Profile request", ['username' => $username]);
+                logInfo("Profile request", ['username' => $username]);
                 
                 if (!$username) {
                     logError("Username not provided for profile");
@@ -545,7 +545,7 @@ try {
             
         case 'newsletter-subscribe':
             if ($method === 'POST') {
-                logSuccess("Newsletter subscribe request received");
+                logInfo("Newsletter subscribe request received");
                 $data = json_decode(file_get_contents('php://input'), true);
                 
                 if (!$data) {
@@ -553,9 +553,9 @@ try {
                     jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri ma\'lumot formati']);
                 }
                 
-                $email = sanitizeInput($data['email']);
+                $email = sanitizeInput($data['email'] ?? '');
                 
-                logSuccess("Newsletter subscription attempt", ['email' => $email]);
+                logInfo("Newsletter subscription attempt", ['email' => $email]);
                 
                 // Validate email format
                 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -582,7 +582,7 @@ try {
 
         case 'admin-newsletter':
             if ($method === 'GET') {
-                logSuccess("Admin newsletter request received");
+                logInfo("Admin newsletter request received");
                 // Verify admin session
                 $token = $_GET['token'] ?? '';
                 $stmt = $pdo->prepare("SELECT u.* FROM users u 
@@ -605,12 +605,12 @@ try {
             break;
 
         case 'test':
-            error_log("Test endpoint called");
+            logInfo("Test endpoint called");
             jsonResponse(['success' => true, 'message' => 'API ishlamoqda', 'timestamp' => date('Y-m-d H:i:s')]);
             break;
 
         default:
-            error_log("Unknown API action: " . json_encode(['action' => $request, 'method' => $method]));
+            logError("Unknown API action", ['action' => $request, 'method' => $method]);
             jsonResponse(['success' => false, 'message' => 'Noto\'g\'ri so\'rov'], 404);
     }
 
