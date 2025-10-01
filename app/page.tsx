@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { MessageCircle, Search, Sun, Moon, Globe, Mail, CircleCheck as CheckCircle } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Textarea } from "@/components/ui/textarea"
 import { useTheme } from "next-themes"
 import { apiEndpoints, apiCall } from "@/lib/api-config"
 
@@ -522,7 +524,7 @@ export default function BlogHome() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => setShowLanguageMenu(!showLanguageMenu)}
+                  onClick={() => router.push(`/post/${post.id}`)}
                   className="flex items-center space-x-1"
                 >
                   <Globe className="h-4 w-4" />
@@ -1195,43 +1197,100 @@ export default function BlogHome() {
               )}
             </div>
           </div>
+                  <Dialog open={showComments === post.id} onOpenChange={() => setShowComments(null)}>
+                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center">
+                          <MessageCircle className="h-5 w-5 mr-2" />
+                          Izohlar ({comments.length})
+                        </DialogTitle>
+                      </DialogHeader>
 
-          {/* Bottom Section */}
-          <div className="border-t mt-8 pt-8 flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-            <div className="text-sm text-muted-foreground">
-              © 2025 {t.siteName}. {t.allRightsReserved}
-            </div>
-            <div className="flex space-x-6 text-sm">
-              <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground hover:text-foreground">
-                {t.privacyPolicy}
-              </Button>
-              <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground hover:text-foreground">
-                {t.termsOfService}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </footer>
-    </div>
-  )
-}
-
-                          </Avatar>
-                          <div className="flex-1">
-                            <div className="bg-muted rounded-lg px-3 py-2">
-                              <p className="text-xs font-medium mb-1">{comment.username}</p>
-                              <p className="text-sm">{comment.content}</p>
+                      <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                        {currentUser ? (
+                          <form onSubmit={(e) => { e.preventDefault(); handleComment(post.id); }} className="mb-6">
+                            <div className="flex space-x-4">
+                              <Avatar className="h-10 w-10 border-2 border-primary/20">
+                                <AvatarImage src={`${apiEndpoints.uploads}/${currentUser.avatar}`} />
+                                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
+                                  {currentUser.username[0].toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1">
+                                <Textarea
+                                  placeholder={t.writeComment}
+                                  value={newComment}
+                                  onChange={(e) => setNewComment(e.target.value)}
+                                  className="mb-3 border-primary/20 focus:border-primary/40"
+                                  rows={3}
+                                />
+                                <Button
+                                  type="submit"
+                                  disabled={!newComment.trim()}
+                                  className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+                                >
+                                  <Send className="h-4 w-4 mr-2" />
+                                  {t.send}
+                                </Button>
+                              </div>
                             </div>
-                            <p className="text-xs text-muted-foreground mt-1">
-                              {new Date(comment.created_at).toLocaleDateString(
-                                currentLang === "uz" ? "uz-UZ" : currentLang === "ru" ? "ru-RU" : "en-US",
-                              )}
+                          </form>
+                        ) : (
+                          <div className="mb-6 p-6 bg-gradient-to-r from-muted/50 to-muted/30 rounded-xl text-center border border-border/50">
+                            <p className="text-muted-foreground mb-3">Izoh qoldirish uchun tizimga kiring</p>
+                            <Button
+                              variant="outline"
+                              onClick={() => setShowLogin(true)}
+                              className="border-primary/30 hover:bg-primary/10"
+                            >
+                              <User className="h-4 w-4 mr-2" />
+                              Tizimga kirish
+                            </Button>
+                          </div>
+                        )}
+
+                        {/* Comments List */}
+                        {comments.length === 0 ? (
+                          <div className="text-center py-12">
+                            <MessageCircle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                            <p className="text-muted-foreground text-lg">
+                              Hozircha izohlar yo'q. Birinchi bo'lib izoh qoldiring!
                             </p>
                           </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                        ) : (
+                          comments.map((comment) => (
+                            <div
+                              key={comment.id}
+                              className="flex space-x-4 p-4 bg-muted/20 rounded-xl hover:bg-muted/30 transition-colors"
+                            >
+                              <Avatar className="h-10 w-10 border-2 border-primary/20">
+                                <AvatarImage src={comment.avatar ? `${apiEndpoints.uploads}/${comment.avatar}` : undefined} />
+                                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
+                                  {comment.username[0].toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-2">
+                                  <span className="font-semibold text-foreground hover:text-primary cursor-pointer">
+                                    {comment.username}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {new Date(comment.created_at).toLocaleDateString("uz-UZ", {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <p className="text-foreground leading-relaxed">{comment.content}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 )}
               </div>
             </article>
