@@ -3,13 +3,15 @@
 import type React from "react"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Mail, Phone, MapPin, Send } from "lucide-react"
+import { Mail, Phone, MapPin, Send, ArrowLeft } from "lucide-react"
 
 export default function ContactPage() {
+  const router = useRouter()
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -52,6 +54,20 @@ export default function ContactPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Header with Back Button */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b">
+        <div className="container mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" onClick={() => router.push("/")} className="hover:bg-primary/10">
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Orqaga
+            </Button>
+            <h1 className="text-xl font-bold text-primary">Bog'lanish</h1>
+            <div className="w-20"></div>
+          </div>
+        </div>
+      </header>
+
       <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <div className="text-center mb-8">
