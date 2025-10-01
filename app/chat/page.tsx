@@ -153,9 +153,16 @@ export default function ChatPage() {
   if (!currentUser) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-foreground mb-4">Tizimga kiring</h1>
-          <Button onClick={() => router.push("/")}>Bosh sahifaga qaytish</Button>
+        <div className="text-center max-w-md mx-auto p-6">
+          <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User className="h-8 w-8 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground mb-2">Chat</h1>
+          <p className="text-muted-foreground mb-6">Chat funksiyasidan foydalanish uchun tizimga kiring</p>
+          <Button onClick={() => router.push("/")} className="w-full">
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Bosh sahifaga qaytish
+          </Button>
         </div>
       </div>
     )
