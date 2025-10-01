@@ -117,8 +117,8 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background to-muted/20 flex items-center justify-center">
         <div className="text-center max-w-md mx-auto p-6">
-          <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
-            <ArrowLeft className="h-8 w-8 text-destructive" />
+          <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
+            <User className="h-8 w-8 text-primary" />
           </div>
           <h1 className="text-2xl font-bold text-foreground mb-2">Foydalanuvchi topilmadi</h1>
           <p className="text-muted-foreground mb-6">{error || "Bunday foydalanuvchi mavjud emas"}</p>
