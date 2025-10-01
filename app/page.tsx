@@ -784,27 +784,438 @@ export default function BlogHome() {
 
                 {/* Comments Section */}
                 {showComments === post.id && (
-                  <div className="mt-4 pt-4 border-t">
+                  <Dialog open={showComments === post.id} onOpenChange={() => setShowComments(null)}>
+                    <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+                      <DialogHeader>
+                        <DialogTitle className="flex items-center">
+                          <MessageCircle className="h-5 w-5 mr-2" />
+                          Izohlar ({comments.length})
+                        </DialogTitle>
+                      </DialogHeader>
+
+                      <div className="flex-1 overflow-y-auto space-y-4 pr-2">
                     {currentUser && (
-                      <div className="flex space-x-2 mb-4">
-                        <Input
-                          placeholder={t.writeComment}
-                          value={newComment}
-                          onChange={(e) => setNewComment(e.target.value)}
-                          onKeyPress={(e) => e.key === "Enter" && handleComment(post.id)}
-                        />
-                        <Button size="sm" onClick={() => handleComment(post.id)}>
-                          {t.send}
-                        </Button>
+                        <form onSubmit={(e) => { e.preventDefault(); handleComment(post.id); }} className="mb-6">
+                          <div className="flex space-x-4">
+                            <Avatar className="h-10 w-10 border-2 border-primary/20">
+                              <AvatarImage src={`${apiEndpoints.uploads}/${currentUser.avatar}`} />
+                              <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
+                                {currentUser.username[0].toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1">
+                              <Textarea
+                                placeholder={t.writeComment}
+                                value={newComment}
+                                onChange={(e) => setNewComment(e.target.value)}
+                                className="mb-3 border-primary/20 focus:border-primary/40"
+                                rows={3}
+                              />
+                              <Button
+                                type="submit"
+                                disabled={!newComment.trim()}
+                                className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70"
+                              >
+                                <Send className="h-4 w-4 mr-2" />
+                                {t.send}
+                              </Button>
+                            </div>
+                          </div>
+                        </form>
+                      ) : (
+                        <div className="mb-6 p-6 bg-gradient-to-r from-muted/50 to-muted/30 rounded-xl text-center border border-border/50">
+                          <p className="text-muted-foreground mb-3">Izoh qoldirish uchun tizimga kiring</p>
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowLogin(true)}
+                            className="border-primary/30 hover:bg-primary/10"
+                          >
+                            <User className="h-4 w-4 mr-2" />
+                            Tizimga kirish
+                          </Button>
                       </div>
                     )}
 
-                    <div className="space-y-3 max-h-60 overflow-y-auto">
-                      {comments.map((comment) => (
-                        <div key={comment.id} className="flex space-x-2">
-                          <Avatar className="h-6 w-6">
-                            <AvatarImage src={`${apiEndpoints.uploads}/${comment.avatar}`} />
-                            <AvatarFallback>{comment.username[0].toUpperCase()}</AvatarFallback>
+                        {/* Comments List */}
+                        {comments.length === 0 ? (
+                          <div className="text-center py-12">
+                            <MessageCircle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                            <p className="text-muted-foreground text-lg">
+                              Hozircha izohlar yo'q. Birinchi bo'lib izoh qoldiring!
+                            </p>
+                          </div>
+                        ) : (
+                          comments.map((comment) => (
+                            <div
+                              key={comment.id}
+                              className="flex space-x-4 p-4 bg-muted/20 rounded-xl hover:bg-muted/30 transition-colors"
+                            >
+                              <Avatar className="h-10 w-10 border-2 border-primary/20">
+                                <AvatarImage src={comment.avatar ? `${apiEndpoints.uploads}/${comment.avatar}` : undefined} />
+                                <AvatarFallback className="bg-gradient-to-br from-primary to-primary/70 text-primary-foreground">
+                                  {comment.username[0].toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex-1">
+                                <div className="flex items-center space-x-2 mb-2">
+                                  <span className="font-semibold text-foreground hover:text-primary cursor-pointer">
+                                    {comment.username}
+                                  </span>
+                                  <span className="text-sm text-muted-foreground">
+                                    {new Date(comment.created_at).toLocaleDateString("uz-UZ", {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })}
+                                  </span>
+                                </div>
+                                <p className="text-foreground leading-relaxed">{comment.content}</p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+
+        {/* Load More Button */}
+        {posts.length > 0 && (
+          <div className="text-center mt-8">
+            <Button onClick={loadMorePosts} disabled={loading} variant="outline">
+              {loading ? t.loading : t.loadMore}
+            </Button>
+          </div>
+        )}
+
+        {posts.length === 0 && !loading && (
+          <div className="text-center py-12">
+            <div className="max-w-md mx-auto">
+              <div className="w-16 h-16 bg-muted/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-2">Hech narsa topilmadi</h3>
+              <p className="text-muted-foreground mb-4">
+                {searchQuery ? `"${searchQuery}" bo'yicha natija topilmadi` : "Hozircha postlar mavjud emas"}
+              </p>
+              {searchQuery && (
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setSearchQuery("")
+                    setPage(1)
+                    loadPosts("", 1)
+                  }}
+                >
+                  Barcha postlarni ko'rish
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Login Modal */}
+      {showLogin && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-4">{t.loginTitle}</h2>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <Input
+                type="email"
+                placeholder={t.email}
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                required
+              />
+              <Input
+                type="password"
+                placeholder={t.password}
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                required
+              />
+              <div className="flex items-center space-x-2">
+                <img src={captchaUrl || "/placeholder.svg"} alt="Captcha" className="border rounded" />
+                <Button type="button" variant="outline" size="sm" onClick={refreshCaptcha}>
+                  {t.refresh}
+                </Button>
+              </div>
+              <Input
+                placeholder={t.captcha}
+                value={loginForm.captcha}
+                onChange={(e) => setLoginForm({ ...loginForm, captcha: e.target.value })}
+                required
+              />
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1">
+                  {t.login}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowLogin(false)}>
+                  {t.cancel}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Register Modal */}
+      {showRegister && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-4">{t.registerTitle}</h2>
+            <form onSubmit={handleRegister} className="space-y-4">
+              <Input
+                placeholder={t.username}
+                value={registerForm.username}
+                onChange={(e) => setRegisterForm({ ...registerForm, username: e.target.value })}
+                required
+              />
+              <Input
+                type="email"
+                placeholder={`${t.email} (@gmail.com)`}
+                value={registerForm.email}
+                onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}
+                required
+              />
+              <Input
+                type="password"
+                placeholder={t.password}
+                value={registerForm.password}
+                onChange={(e) => setRegisterForm({ ...registerForm, password: e.target.value })}
+                required
+              />
+              <div className="flex items-center space-x-2">
+                <img src={captchaUrl || "/placeholder.svg"} alt="Captcha" className="border rounded" />
+                <Button type="button" variant="outline" size="sm" onClick={refreshCaptcha}>
+                  {t.refresh}
+                </Button>
+              </div>
+              <Input
+                placeholder={t.captcha}
+                value={registerForm.captcha}
+                onChange={(e) => setRegisterForm({ ...registerForm, captcha: e.target.value })}
+                required
+              />
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1">
+                  {t.register}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowRegister(false)}>
+                  {t.cancel}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Email Verification Modal */}
+      {showVerification && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg p-6 w-full max-w-md">
+            <h2 className="text-2xl font-bold mb-4">{t.emailVerification}</h2>
+            <p className="text-muted-foreground mb-4">Emailingizga yuborilgan tasdiqlash kodini kiriting</p>
+            <form onSubmit={handleVerification} className="space-y-4">
+              <Input
+                placeholder={t.verificationCode}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value)}
+                required
+              />
+              <div className="flex space-x-2">
+                <Button type="submit" className="flex-1">
+                  {t.verify}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => setShowVerification(false)}>
+                  {t.cancel}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Enhanced Footer */}
+      <footer className="bg-card border-t mt-16">
+        <div className="container mx-auto px-4 py-12">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {/* Brand Section */}
+            <div className="space-y-4">
+              <h3 className="text-2xl font-bold text-primary">{t.siteName}</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">{t.brandDesc}</p>
+              <div className="flex space-x-4">
+                <Button variant="ghost" size="sm" className="p-2 hover:text-blue-500">
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M24 4.557c-.883.392-1.832.656-2.828.775 1.017-.609 1.798-1.574 2.165-2.724-.951.564-2.005.974-3.127 1.195-.897-.957-2.178-1.555-3.594-1.555-3.179 0-5.515 2.966-4.797 6.045-4.091-.205-7.719-2.165-10.148-5.144-1.29 2.213-.669 5.108 1.523 6.574-.806-.026-1.566-.247-2.229-.616-.054 2.281 1.581 4.415 3.949 4.89-.693.188-1.452.232-2.224.084.626 1.956 2.444 3.379 4.6 3.419-2.07 1.623-4.678 2.348-7.29 2.04 2.179 1.397 4.768 2.212 7.548 2.212 9.142 0 14.307-7.721 13.995-14.646.962-.695 1.797-1.562 2.457-2.549z" />
+                  </svg>
+                </Button>
+                <Button variant="ghost" size="sm" className="p-2 hover:text-blue-600">
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                  </svg>
+                </Button>
+                <Button variant="ghost" size="sm" className="p-2 hover:text-gray-800">
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 0C5.374 0 0 5.373 0 12 0 17.302 3.438 21.8 8.207 23.387c.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" />
+                  </svg>
+                </Button>
+                <Button variant="ghost" size="sm" className="p-2 hover:text-red-500">
+                  <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
+                  </svg>
+                </Button>
+              </div>
+            </div>
+
+            {/* Quick Links */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold">{t.quickLinks}</h4>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground hover:text-foreground">
+                    {t.home}
+                  </Button>
+                </li>
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => router.push("/chat")}
+                  >
+                    {t.chat}
+                  </Button>
+                </li>
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => router.push("/contact")}
+                  >
+                    {t.contact}
+                  </Button>
+                </li>
+                <li>
+                  <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground hover:text-foreground">
+                    {t.help}
+                  </Button>
+                </li>
+              </ul>
+            </div>
+
+            {/* Categories */}
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold">{t.categories}</h4>
+              <ul className="space-y-2 text-sm">
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => searchByCategory("JavaScript")}
+                  >
+                    JavaScript
+                  </Button>
+                </li>
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => searchByCategory("Python")}
+                  >
+                    Python
+                  </Button>
+                </li>
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => searchByCategory("React")}
+                  >
+                    React
+                  </Button>
+                </li>
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => searchByCategory("Node.js")}
+                  >
+                    Node.js
+                  </Button>
+                </li>
+                <li>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => searchByCategory("Web Development")}
+                  >
+                    Web Development
+                  </Button>
+                </li>
+              </ul>
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold flex items-center">
+                <Mail className="h-5 w-5 mr-2" />
+                {t.newsletter}
+              </h4>
+              <p className="text-sm text-muted-foreground">{t.newsletterDesc}</p>
+              {newsletterSubscribed ? (
+                <div className="flex items-center space-x-2 text-green-600">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="text-sm font-medium">{t.subscribed}</span>
+                </div>
+              ) : (
+                <form onSubmit={handleNewsletterSubscribe} className="space-y-2">
+                  <Input
+                    placeholder={t.enterEmail}
+                    type="email"
+                    value={newsletterEmail}
+                    onChange={(e) => setNewsletterEmail(e.target.value)}
+                    required
+                  />
+                  <Button type="submit" size="sm" className="w-full">
+                    {t.subscribe}
+                  </Button>
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* Bottom Section */}
+          <div className="border-t mt-8 pt-8 flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+            <div className="text-sm text-muted-foreground">
+              © 2025 {t.siteName}. {t.allRightsReserved}
+            </div>
+            <div className="flex space-x-6 text-sm">
+              <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground hover:text-foreground">
+                {t.privacyPolicy}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-auto p-0 text-muted-foreground hover:text-foreground">
+                {t.termsOfService}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </footer>
+    </div>
+  )
+}
+
                           </Avatar>
                           <div className="flex-1">
                             <div className="bg-muted rounded-lg px-3 py-2">
