@@ -2054,6 +2054,9 @@
   .text-yellow-500 {
     color: var(--color-yellow-500);
   }
+  .capitalize {
+    text-transform: capitalize;
+  }
   .lowercase {
     text-transform: lowercase;
   }
@@ -2285,6 +2288,9 @@
   }
   .\[xlink\:href\] {
     xlink: href;
+  }
+  .fade-in {
+    --tw-enter-opacity: 0;
   }
   .running {
     animation-play-state: running;
