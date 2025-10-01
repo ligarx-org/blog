@@ -29,7 +29,10 @@ class Database {
 
 // Utility functions
 function sanitizeInput($data) {
-    if ($data === null || $data === '') {
+    if ($data === null) {
+        return '';
+    }
+    if ($data === '') {
         return '';
     }
     return htmlspecialchars(strip_tags(trim($data)), ENT_QUOTES, 'UTF-8');
