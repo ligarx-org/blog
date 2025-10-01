@@ -2606,6 +2606,9 @@
       --tw-divide-x-reverse: 1;
     }
   }
+  .fade-in {
+    --tw-enter-opacity: 0;
+  }
   .ring-inset {
     --tw-ring-inset: inset;
   }

@@ -3,8 +3,6 @@ session_start();
 
 // Generate captcha image
 function generateCaptcha() {
-    error_log("Captcha generation started at " . date('Y-m-d H:i:s'));
-    
     $width = 120;
     $height = 40;
     $font_size = 5;
@@ -15,8 +13,6 @@ function generateCaptcha() {
     for ($i = 0; $i < 6; $i++) {
         $captcha_code .= $chars[rand(0, strlen($chars) - 1)];
     }
-    
-    error_log("Captcha code generated: " . $captcha_code);
     
     // Store in session
     $_SESSION['captcha'] = $captcha_code;
@@ -35,8 +31,8 @@ function generateCaptcha() {
     }
     
     // Add text
-    $x = intval(($width - strlen($captcha_code) * imagefontwidth($font_size)) / 2);
-    $y = intval(($height - imagefontheight($font_size)) / 2);
+    $x = (int)(($width - strlen($captcha_code) * imagefontwidth($font_size)) / 2);
+    $y = (int)(($height - imagefontheight($font_size)) / 2);
     imagestring($image, $font_size, $x, $y, $captcha_code, $text_color);
     
     // Output image
@@ -47,8 +43,6 @@ function generateCaptcha() {
     
     imagepng($image);
     imagedestroy($image);
-    
-    error_log("Captcha image generated successfully");
 }
 
 generateCaptcha();
